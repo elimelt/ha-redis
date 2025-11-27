@@ -1,0 +1,200 @@
+version: '3.8'
+
+services:
+  # Redis Cluster Node 1
+  redis-node-1:
+    image: redis:7-alpine
+    container_name: redis-node-1
+    entrypoint: /cluster-entrypoint.sh
+    environment:
+      - CLUSTER_IP=redis-node-1
+    volumes:
+      - ./config/redis-cluster.conf:/tmp/redis-cluster.conf:ro
+      - ./s/cluster-entrypoint.sh:/cluster-entrypoint.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "7000:6379"
+      - "17000:16379"
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Cluster Node 2
+  redis-node-2:
+    image: redis:7-alpine
+    container_name: redis-node-2
+    entrypoint: /cluster-entrypoint.sh
+    environment:
+      - CLUSTER_IP=redis-node-2
+    volumes:
+      - ./config/redis-cluster.conf:/tmp/redis-cluster.conf:ro
+      - ./s/cluster-entrypoint.sh:/cluster-entrypoint.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "7001:6379"
+      - "17001:16379"
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Cluster Node 3
+  redis-node-3:
+    image: redis:7-alpine
+    container_name: redis-node-3
+    entrypoint: /cluster-entrypoint.sh
+    environment:
+      - CLUSTER_IP=redis-node-3
+    volumes:
+      - ./config/redis-cluster.conf:/tmp/redis-cluster.conf:ro
+      - ./s/cluster-entrypoint.sh:/cluster-entrypoint.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "7002:6379"
+      - "17002:16379"
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Cluster Node 4
+  redis-node-4:
+    image: redis:7-alpine
+    container_name: redis-node-4
+    entrypoint: /cluster-entrypoint.sh
+    environment:
+      - CLUSTER_IP=redis-node-4
+    volumes:
+      - ./config/redis-cluster.conf:/tmp/redis-cluster.conf:ro
+      - ./s/cluster-entrypoint.sh:/cluster-entrypoint.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "7003:6379"
+      - "17003:16379"
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Cluster Node 5
+  redis-node-5:
+    image: redis:7-alpine
+    container_name: redis-node-5
+    entrypoint: /cluster-entrypoint.sh
+    environment:
+      - CLUSTER_IP=redis-node-5
+    volumes:
+      - ./config/redis-cluster.conf:/tmp/redis-cluster.conf:ro
+      - ./s/cluster-entrypoint.sh:/cluster-entrypoint.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "7004:6379"
+      - "17004:16379"
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Cluster Node 6
+  redis-node-6:
+    image: redis:7-alpine
+    container_name: redis-node-6
+    entrypoint: /cluster-entrypoint.sh
+    environment:
+      - CLUSTER_IP=redis-node-6
+    volumes:
+      - ./config/redis-cluster.conf:/tmp/redis-cluster.conf:ro
+      - ./s/cluster-entrypoint.sh:/cluster-entrypoint.sh:ro
+    tmpfs:
+      - /data
+    ports:
+      - "7005:6379"
+      - "17005:16379"
+    networks:
+      - redis-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Load Generator
+  load-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile.loadgen
+    container_name: redis-cluster-load-generator
+    environment:
+      - REDIS_CLUSTER_NODES=redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379
+      - OPERATIONS_PER_SECOND=100
+      - READ_WRITE_RATIO=70
+    networks:
+      - redis-network
+    depends_on:
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+      redis-node-4:
+        condition: service_healthy
+      redis-node-5:
+        condition: service_healthy
+      redis-node-6:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Express.js Application
+  express-app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: redis-cluster-express-app
+    environment:
+      - PORT=3000
+      - REDIS_CLUSTER_NODES=redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379
+    ports:
+      - "3001:3000"
+    networks:
+      - redis-network
+    depends_on:
+      redis-node-1:
+        condition: service_healthy
+      redis-node-2:
+        condition: service_healthy
+      redis-node-3:
+        condition: service_healthy
+      redis-node-4:
+        condition: service_healthy
+      redis-node-5:
+        condition: service_healthy
+      redis-node-6:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  redis-network:
+    driver: bridge
+

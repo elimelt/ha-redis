@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  # Dragonfly Primary
+  dragonfly-primary:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
+    container_name: dragonfly-primary
+    command:
+      - "--port=6379"
+      - "--logtostderr"
+    ports:
+      - "6379:6379"
+    networks:
+      - dragonfly-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6379", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Dragonfly Replica 1
+  dragonfly-replica-1:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
+    container_name: dragonfly-replica-1
+    command:
+      - "--port=6380"
+      - "--replicaof=dragonfly-primary:6379"
+      - "--logtostderr"
+    ports:
+      - "6380:6380"
+    networks:
+      - dragonfly-network
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Dragonfly Replica 2
+  dragonfly-replica-2:
+    image: docker.dragonflydb.io/dragonflydb/dragonfly
+    container_name: dragonfly-replica-2
+    command:
+      - "--port=6381"
+      - "--replicaof=dragonfly-primary:6379"
+      - "--logtostderr"
+    ports:
+      - "6381:6381"
+    networks:
+      - dragonfly-network
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6381", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Load Generator
+  load-generator:
+    build:
+      context: .
+      dockerfile: Dockerfile.loadgen
+    container_name: dragonfly-load-generator
+    environment:
+      - DRAGONFLY_PRIMARY=dragonfly-primary:6379
+      - DRAGONFLY_REPLICA_1=dragonfly-replica-1:6380
+      - DRAGONFLY_REPLICA_2=dragonfly-replica-2:6381
+      - OPERATIONS_PER_SECOND=100
+      - READ_WRITE_RATIO=70
+    networks:
+      - dragonfly-network
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+      dragonfly-replica-1:
+        condition: service_healthy
+      dragonfly-replica-2:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Express.js Application
+  express-app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: dragonfly-express-app
+    environment:
+      - PORT=3000
+      - DRAGONFLY_PRIMARY=dragonfly-primary:6379
+      - DRAGONFLY_REPLICA_1=dragonfly-replica-1:6380
+      - DRAGONFLY_REPLICA_2=dragonfly-replica-2:6381
+    ports:
+      - "3002:3000"
+    networks:
+      - dragonfly-network
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+      dragonfly-replica-1:
+        condition: service_healthy
+      dragonfly-replica-2:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  dragonfly-network:
+    driver: bridge
+

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Redis HA Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .status-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-healthy {
+            background-color: #10b981;
+        }
+        
+        .status-unhealthy {
+            background-color: #ef4444;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .control-group {
+            background: #f3f4f6;
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .control-group h3 {
+            margin-bottom: 10px;
+            color: #374151;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            width: 100%;
+            margin-top: 10px;
+            transition: transform 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        input, select {
+            width: 100%;
+            padding: 8px;
+            margin-top: 5px;
+            border: 1px solid #d1d5db;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        
+        label {
+            display: block;
+            margin-top: 10px;
+            color: #374151;
+            font-weight: 500;
+        }
+        
+        .log {
+            background: #1f2937;
+            color: #10b981;
+            padding: 15px;
+            border-radius: 8px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        
+        .log-entry {
+            margin-bottom: 5px;
+        }
+        
+        .log-error {
+            color: #ef4444;
+        }
+        
+        .log-success {
+            color: #10b981;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Redis HA Dashboard</h1>
+        
+        <div class="status-card">
+            <h2>
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">Checking...</span>
+            </h2>
+        </div>
+        
+        <div class="status-card">
+            <h2>Statistics</h2>
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <div class="stat-value" id="totalRequests">0</div>
+                    <div class="stat-label">Total Requests</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="successRate">0%</div>
+                    <div class="stat-label">Success Rate</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="reads">0</div>
+                    <div class="stat-label">Reads</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="writes">0</div>
+                    <div class="stat-label">Writes</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="requestsPerSecond">0</div>
+                    <div class="stat-label">Requests/sec</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value" id="uptime">0s</div>
+                    <div class="stat-label">Uptime</div>
+                </div>
+            </div>
+            <button onclick="resetStats()">Reset Statistics</button>
+        </div>
+        
+        <div class="status-card">
+            <h2>Load Generation</h2>
+            <div class="controls">
+                <div class="control-group">
+                    <h3>Generate Load</h3>
+                    <label>
+                        Operations:
+                        <input type="number" id="operations" value="100" min="1" max="100000">
+                    </label>
+                    <label>
+                        Read/Write Ratio (% reads):
+                        <input type="number" id="readWriteRatio" value="70" min="0" max="100">
+                    </label>
+                    <button onclick="generateLoad()">Generate Load</button>
+                </div>
+                
+                <div class="control-group">
+                    <h3>Quick Operations</h3>
+                    <button onclick="performOperation('set')">SET Random Key</button>
+                    <button onclick="performOperation('get')">GET Random Key</button>
+                    <button onclick="performOperation('incr')">INCR Counter</button>
+                    <button onclick="performOperation('lpush')">LPUSH to List</button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="status-card">
+            <h2>Activity Log</h2>
+            <div class="log" id="activityLog">
+                <div class="log-entry">Dashboard initialized. Waiting for activity...</div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let autoRefresh = true;
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('activityLog');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            entry.textContent = `[${timestamp}] ${message}`;
+            logDiv.insertBefore(entry, logDiv.firstChild);
+            
+            // Keep only last 50 entries
+            while (logDiv.children.length > 50) {
+                logDiv.removeChild(logDiv.lastChild);
+            }
+        }
+        
+        async function checkHealth() {
+            try {
+                const response = await fetch('/health');
+                const data = await response.json();
+                
+                const indicator = document.getElementById('statusIndicator');
+                const statusText = document.getElementById('statusText');
+                
+                if (data.status === 'healthy') {
+                    indicator.className = 'status-indicator status-healthy';
+                    statusText.textContent = 'Connected to Redis Cluster';
+                } else {
+                    indicator.className = 'status-indicator status-unhealthy';
+                    statusText.textContent = 'Disconnected';
+                }
+            } catch (error) {
+                const indicator = document.getElementById('statusIndicator');
+                const statusText = document.getElementById('statusText');
+                indicator.className = 'status-indicator status-unhealthy';
+                statusText.textContent = 'Error connecting to server';
+                log('Health check failed: ' + error.message, 'error');
+            }
+        }
+        
+        async function updateStats() {
+            try {
+                const response = await fetch('/stats');
+                const data = await response.json();
+                
+                document.getElementById('totalRequests').textContent = data.totalRequests;
+                document.getElementById('successRate').textContent = data.successRate;
+                document.getElementById('reads').textContent = data.reads;
+                document.getElementById('writes').textContent = data.writes;
+                document.getElementById('requestsPerSecond').textContent = data.requestsPerSecond;
+                document.getElementById('uptime').textContent = data.uptime;
+            } catch (error) {
+                log('Failed to update stats: ' + error.message, 'error');
+            }
+        }
+        
+        async function resetStats() {
+            try {
+                const response = await fetch('/stats/reset', { method: 'POST' });
+                const data = await response.json();
+                log('Statistics reset', 'success');
+                updateStats();
+            } catch (error) {
+                log('Failed to reset stats: ' + error.message, 'error');
+            }
+        }
+        
+        async function generateLoad() {
+            const operations = document.getElementById('operations').value;
+            const readWriteRatio = document.getElementById('readWriteRatio').value;
+            
+            log(`Generating ${operations} operations (${readWriteRatio}% reads)...`, 'info');
+            
+            try {
+                const response = await fetch('/load', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        operations: parseInt(operations),
+                        readWriteRatio: parseInt(readWriteRatio)
+                    })
+                });
+                
+                const data = await response.json();
+                log(`Load generation complete: ${data.results.successful} successful, ${data.results.failed} failed`, 'success');
+                updateStats();
+            } catch (error) {
+                log('Load generation failed: ' + error.message, 'error');
+            }
+        }
+        
+        async function performOperation(op) {
+            log(`Performing ${op.toUpperCase()} operation...`, 'info');
+            
+            try {
+                let response;
+                if (op === 'get') {
+                    response = await fetch(`/${op}`);
+                } else {
+                    response = await fetch(`/${op}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: '{}'
+                    });
+                }
+                
+                const data = await response.json();
+                if (data.success) {
+                    log(`${op.toUpperCase()} successful: ${JSON.stringify(data)}`, 'success');
+                } else {
+                    log(`${op.toUpperCase()} failed: ${data.error}`, 'error');
+                }
+                updateStats();
+            } catch (error) {
+                log(`${op.toUpperCase()} failed: ${error.message}`, 'error');
+            }
+        }
+        
+        // Initialize
+        checkHealth();
+        updateStats();
+        
+        // Auto-refresh every 2 seconds
+        setInterval(() => {
+            if (autoRefresh) {
+                checkHealth();
+                updateStats();
+            }
+        }, 2000);
+        
+        log('Dashboard ready!', 'success');
+    </script>
+</body>
+</html>
+

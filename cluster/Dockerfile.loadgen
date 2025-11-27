@@ -1,0 +1,13 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install redis-py with cluster support
+RUN pip install --no-cache-dir redis==5.0.1
+
+# Copy load generator script
+COPY s/load-generator.py /app/load-generator.py
+
+# Run the load generator
+CMD ["python", "-u", "load-generator.py"]
+
