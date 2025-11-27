@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# Test script for Redis HA Express Application
+# Test script for Redis HA Go Application
 # Usage: ./test-endpoints.sh [base_url]
 
 BASE_URL=${1:-http://localhost:3000}
 
-echo "Testing Redis HA Express Application"
+echo "Testing Redis HA Go Application"
 echo "Base URL: $BASE_URL"
 echo "========================================"
 echo ""

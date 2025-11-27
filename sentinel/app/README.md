@@ -1,6 +1,6 @@
-# Redis HA Express Application
+# Redis HA Go Application
 
-An Express.js application that connects to a Redis High Availability cluster using Sentinel and provides HTTP endpoints for various Redis operations.
+A Go application that connects to a Redis High Availability cluster using Sentinel and provides HTTP endpoints for various Redis operations.
 
 ## Features
 
@@ -137,33 +137,34 @@ fetch('http://localhost:3000/load', {
 ## Environment Variables
 
 - `PORT` - Server port (default: 3000)
-- `REDIS_SENTINELS` - Comma-separated list of sentinel addresses (default: redis-sentinel-1:26379)
-- `REDIS_MASTER_NAME` - Redis master name (default: mymaster)
+- `REDIS_MASTER_HOST` - Redis master hostname (default: redis-primary)
+- `REDIS_MASTER_PORT` - Redis master port (default: 6379)
+- `REDIS_SLAVE_HOST` - Redis slave hostname (default: redis-replica-1)
+- `REDIS_SLAVE_PORT` - Redis slave port (default: 6379)
 
 ## Running Locally
 
 ```bash
-# Install dependencies
-npm install
+# Build the application
+go build -o server .
 
 # Start the server
-npm start
-
-# Or use nodemon for development
-npm run dev
+./server
 ```
 
 ## Running with Docker
 
 ```bash
 # Build the image
-docker build -t redis-ha-express .
+docker build -t redis-ha-go .
 
 # Run the container
 docker run -p 3000:3000 \
-  -e REDIS_SENTINELS=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379 \
-  -e REDIS_MASTER_NAME=mymaster \
-  redis-ha-express
+  -e REDIS_MASTER_HOST=redis-primary \
+  -e REDIS_MASTER_PORT=6379 \
+  -e REDIS_SLAVE_HOST=redis-replica-1 \
+  -e REDIS_SLAVE_PORT=6379 \
+  redis-ha-go
 ```
 
 ## Testing Failover

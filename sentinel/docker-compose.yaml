@@ -147,12 +147,12 @@ services:
       - redis-sentinel-3
     restart: unless-stopped
 
-  # Express.js Application
+  # Go Application
   express-app:
     build:
       context: ./app
       dockerfile: Dockerfile
-    container_name: redis-express-app
+    container_name: redis-go-app
     environment:
       - PORT=3000
       - REDIS_SENTINELS=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379

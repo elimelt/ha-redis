@@ -83,12 +83,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Express.js Application
+  # Go Application
   express-app:
     build:
       context: ./app
       dockerfile: Dockerfile
-    container_name: dragonfly-express-app
+    container_name: dragonfly-go-app
     environment:
       - PORT=3000
       - DRAGONFLY_PRIMARY=dragonfly-primary:6379

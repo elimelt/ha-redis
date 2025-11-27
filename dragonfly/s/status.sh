@@ -24,8 +24,8 @@ echo "Replica 2 Replication Info:"
 docker exec dragonfly-replica-2 redis-cli -p 6381 INFO REPLICATION 2>/dev/null || echo "Replica 2 not available"
 echo ""
 
-# Check Express app
-echo "Express App Status:"
-curl -s http://localhost:3002/health 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Express app not available"
+# Check Go app
+echo "Go App Status:"
+curl -s http://localhost:3002/health 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "Go app not available"
 echo ""
 

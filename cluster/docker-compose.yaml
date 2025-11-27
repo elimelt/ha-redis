@@ -166,12 +166,12 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Express.js Application
+  # Go Application
   express-app:
     build:
       context: ./app
       dockerfile: Dockerfile
-    container_name: redis-cluster-express-app
+    container_name: redis-cluster-go-app
     environment:
       - PORT=3000
       - REDIS_CLUSTER_NODES=redis-node-1:6379,redis-node-2:6379,redis-node-3:6379,redis-node-4:6379,redis-node-5:6379,redis-node-6:6379

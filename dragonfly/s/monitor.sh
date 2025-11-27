@@ -29,12 +29,12 @@ while true; do
     echo "Replica 2 (6381):"
     docker exec dragonfly-replica-2 redis-cli -p 6381 INFO STATS 2>/dev/null | grep -E "total_commands_processed|instantaneous_ops_per_sec" || echo "  Not available"
     echo ""
-    
-    # Express app stats
-    echo "Express App Stats:"
+
+    # Go app stats
+    echo "Go App Stats:"
     curl -s http://localhost:3002/stats 2>/dev/null | python3 -m json.tool 2>/dev/null || echo "  Not available"
     echo ""
-    
+
     sleep 2
 done
 

@@ -1,19 +1,32 @@
-FROM node:18-alpine
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy go mod files
+COPY go.mod go.sum* ./
 
-# Install dependencies
-RUN npm install --production
+# Download dependencies
+RUN go mod download
 
-# Copy application files
-COPY server.js ./
+# Copy source code
+COPY main.go ./
+
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -o server .
+
+# Final stage
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates
+
+WORKDIR /root/
+
+# Copy the binary from builder
+COPY --from=builder /app/server .
 
 # Expose port
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "server.js"]
+CMD ["./server"]
 

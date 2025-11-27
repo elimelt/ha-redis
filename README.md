@@ -32,5 +32,5 @@ cd dragonfly
 Each directory contains:
 - `docker-compose.yaml` - Service definitions
 - `s/` - Scripts for start, stop, status, monitoring, and failover testing
-- `app/` - Express.js application for testing
+- `app/` - Go application for testing
 
