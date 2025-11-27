@@ -20,9 +20,7 @@ import (
 )
 
 var (
-	primaryClient  *redis.Client
-	replica1Client *redis.Client
-	replica2Client *redis.Client
+	sentinelClient *redis.Client
 	ctx            = context.Background()
 	stats          Stats
 )
@@ -41,85 +39,46 @@ func init() {
 	stats.StartTime = time.Now().Unix()
 }
 
-func parseHost(hostStr string) (string, int) {
-	parts := strings.Split(hostStr, ":")
-	host := parts[0]
-	port := 6379
-	if len(parts) > 1 {
-		if p, err := strconv.Atoi(parts[1]); err == nil {
-			port = p
-		}
-	}
-	return host, port
-}
-
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "3000"
 	}
 
-	// Parse DragonflyDB connection strings
-	primaryEnv := os.Getenv("DRAGONFLY_PRIMARY")
-	if primaryEnv == "" {
-		primaryEnv = "dragonfly-primary:6379"
-	}
-	replica1Env := os.Getenv("DRAGONFLY_REPLICA_1")
-	if replica1Env == "" {
-		replica1Env = "dragonfly-replica-1:6380"
-	}
-	replica2Env := os.Getenv("DRAGONFLY_REPLICA_2")
-	if replica2Env == "" {
-		replica2Env = "dragonfly-replica-2:6381"
+	// Parse Sentinel addresses
+	sentinelsEnv := os.Getenv("SENTINEL_ADDRESSES")
+	if sentinelsEnv == "" {
+		sentinelsEnv = "dragonfly-sentinel-1:26379,dragonfly-sentinel-2:26379,dragonfly-sentinel-3:26379"
 	}
 
-	primaryHost, primaryPort := parseHost(primaryEnv)
-	replica1Host, replica1Port := parseHost(replica1Env)
-	replica2Host, replica2Port := parseHost(replica2Env)
+	masterName := os.Getenv("SENTINEL_MASTER_NAME")
+	if masterName == "" {
+		masterName = "dragonfly-master"
+	}
 
-	log.Printf("Connecting to DragonflyDB primary: %s:%d", primaryHost, primaryPort)
-	log.Printf("Connecting to DragonflyDB replica 1: %s:%d", replica1Host, replica1Port)
-	log.Printf("Connecting to DragonflyDB replica 2: %s:%d", replica2Host, replica2Port)
+	sentinelAddrs := strings.Split(sentinelsEnv, ",")
+	for i, addr := range sentinelAddrs {
+		sentinelAddrs[i] = strings.TrimSpace(addr)
+	}
 
-	// Create Redis clients
-	primaryClient = redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", primaryHost, primaryPort),
-		DialTimeout:  10 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
+	log.Printf("Connecting to DragonflyDB via Sentinel")
+	log.Printf("Sentinel addresses: %v", sentinelAddrs)
+	log.Printf("Master name: %s", masterName)
+
+	// Create Sentinel client
+	sentinelClient = redis.NewFailoverClient(&redis.FailoverOptions{
+		MasterName:    masterName,
+		SentinelAddrs: sentinelAddrs,
+		DialTimeout:   10 * time.Second,
+		ReadTimeout:   3 * time.Second,
+		WriteTimeout:  3 * time.Second,
 	})
 
-	replica1Client = redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", replica1Host, replica1Port),
-		DialTimeout:  10 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	})
-
-	replica2Client = redis.NewClient(&redis.Options{
-		Addr:         fmt.Sprintf("%s:%d", replica2Host, replica2Port),
-		DialTimeout:  10 * time.Second,
-		ReadTimeout:  3 * time.Second,
-		WriteTimeout: 3 * time.Second,
-	})
-
-	// Test connections
-	if err := primaryClient.Ping(ctx).Err(); err != nil {
-		log.Printf("Failed to connect to DragonflyDB primary: %v", err)
+	// Test connection
+	if err := sentinelClient.Ping(ctx).Err(); err != nil {
+		log.Printf("Failed to connect to DragonflyDB via Sentinel: %v", err)
 	} else {
-		log.Println("Connected to DragonflyDB primary")
-	}
-
-	if err := replica1Client.Ping(ctx).Err(); err != nil {
-		log.Printf("Failed to connect to DragonflyDB replica 1: %v", err)
-	} else {
-		log.Println("Connected to DragonflyDB replica 1")
-	}
-
-	if err := replica2Client.Ping(ctx).Err(); err != nil {
-		log.Printf("Failed to connect to DragonflyDB replica 2: %v", err)
-	} else {
-		log.Println("Connected to DragonflyDB replica 2")
+		log.Println("Connected to DragonflyDB via Sentinel")
 	}
 
 	// Setup router
@@ -146,9 +105,6 @@ func main() {
 	r.HandleFunc("/hgetall/{key}", hgetallHandler).Methods("GET")
 	r.HandleFunc("/hgetall", hgetallHandler).Methods("GET")
 	r.HandleFunc("/load", loadHandler).Methods("POST")
-
-	// Serve static files (must be last)
-	r.PathPrefix("/").Handler(http.FileServer(http.Dir("./public")))
 
 	// Start server
 	srv := &http.Server{
@@ -192,9 +148,7 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
-	primaryClient.Close()
-	replica1Client.Close()
-	replica2Client.Close()
+	sentinelClient.Close()
 
 	log.Println("Server exited")
 }
@@ -207,15 +161,8 @@ func loggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func getReplicaClient() *redis.Client {
-	if rand.Float64() < 0.5 {
-		return replica1Client
-	}
-	return replica2Client
-}
-
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	err := primaryClient.Set(ctx, "_health_check", "ok", 10*time.Second).Err()
+	err := sentinelClient.Set(ctx, "_health_check", "ok", 10*time.Second).Err()
 	if err != nil {
 		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
 			"status": "unhealthy",
@@ -224,7 +171,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	val, err := primaryClient.Get(ctx, "_health_check").Result()
+	val, err := sentinelClient.Get(ctx, "_health_check").Result()
 	if err != nil {
 		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
 			"status": "unhealthy",
@@ -232,9 +179,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	replica1Ping := replica1Client.Ping(ctx).Err()
-	replica2Ping := replica2Client.Ping(ctx).Err()
 
 	test := "failed"
 	if val == "ok" {
@@ -242,11 +186,9 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"status":   "healthy",
-		"message":  "Connected to DragonflyDB",
-		"test":     test,
-		"replica1": replica1Ping == nil,
-		"replica2": replica2Ping == nil,
+		"status":  "healthy",
+		"message": "Connected to DragonflyDB via Sentinel",
+		"test":    test,
 	})
 }
 
@@ -318,7 +260,7 @@ func setHandler(w http.ResponseWriter, r *http.Request) {
 		req.TTL = 300
 	}
 
-	err := primaryClient.Set(ctx, req.Key, req.Value, time.Duration(req.TTL)*time.Second).Err()
+	err := sentinelClient.Set(ctx, req.Key, req.Value, time.Duration(req.TTL)*time.Second).Err()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -354,7 +296,7 @@ func incrHandler(w http.ResponseWriter, r *http.Request) {
 		req.Key = fmt.Sprintf("counter:%d", getRandomInt(1, 100))
 	}
 
-	result, err := primaryClient.Incr(ctx, req.Key).Result()
+	result, err := sentinelClient.Incr(ctx, req.Key).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -394,7 +336,7 @@ func lpushHandler(w http.ResponseWriter, r *http.Request) {
 		req.Value = generateRandomString(20)
 	}
 
-	err := primaryClient.LPush(ctx, req.Key, req.Value).Err()
+	err := sentinelClient.LPush(ctx, req.Key, req.Value).Err()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -404,7 +346,7 @@ func lpushHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	primaryClient.LTrim(ctx, req.Key, 0, 99)
+	sentinelClient.LTrim(ctx, req.Key, 0, 99)
 
 	atomic.AddInt64(&stats.SuccessfulRequests, 1)
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -436,7 +378,7 @@ func saddHandler(w http.ResponseWriter, r *http.Request) {
 		req.Value = generateRandomString(20)
 	}
 
-	result, err := primaryClient.SAdd(ctx, req.Key, req.Value).Result()
+	result, err := sentinelClient.SAdd(ctx, req.Key, req.Value).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -482,7 +424,7 @@ func hsetHandler(w http.ResponseWriter, r *http.Request) {
 		req.Value = generateRandomString(20)
 	}
 
-	result, err := primaryClient.HSet(ctx, req.Key, req.Field, req.Value).Result()
+	result, err := sentinelClient.HSet(ctx, req.Key, req.Field, req.Value).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -513,8 +455,7 @@ func getHandler(w http.ResponseWriter, r *http.Request) {
 		key = generateRandomKey()
 	}
 
-	client := getReplicaClient()
-	value, err := client.Get(ctx, key).Result()
+	value, err := sentinelClient.Get(ctx, key).Result()
 	if err != nil && err != redis.Nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -544,8 +485,7 @@ func existsHandler(w http.ResponseWriter, r *http.Request) {
 		key = generateRandomKey()
 	}
 
-	client := getReplicaClient()
-	exists, err := client.Exists(ctx, key).Result()
+	exists, err := sentinelClient.Exists(ctx, key).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -587,8 +527,7 @@ func lrangeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	client := getReplicaClient()
-	values, err := client.LRange(ctx, key, int64(start), int64(stop)).Result()
+	values, err := sentinelClient.LRange(ctx, key, int64(start), int64(stop)).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -620,8 +559,7 @@ func smembersHandler(w http.ResponseWriter, r *http.Request) {
 		key = fmt.Sprintf("set:%d", getRandomInt(1, 50))
 	}
 
-	client := getReplicaClient()
-	members, err := client.SMembers(ctx, key).Result()
+	members, err := sentinelClient.SMembers(ctx, key).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -651,8 +589,7 @@ func hgetallHandler(w http.ResponseWriter, r *http.Request) {
 		key = fmt.Sprintf("hash:%d", getRandomInt(1, 50))
 	}
 
-	client := getReplicaClient()
-	hash, err := client.HGetAll(ctx, key).Result()
+	hash, err := sentinelClient.HGetAll(ctx, key).Result()
 	if err != nil {
 		atomic.AddInt64(&stats.FailedRequests, 1)
 		respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -709,40 +646,39 @@ func loadHandler(w http.ResponseWriter, r *http.Request) {
 		if isRead {
 			results["reads"]++
 			op := readOps[rand.Intn(len(readOps))]
-			client := getReplicaClient()
 			switch op {
 			case "get":
-				_, err = client.Get(ctx, generateRandomKey()).Result()
+				_, err = sentinelClient.Get(ctx, generateRandomKey()).Result()
 				if err == redis.Nil {
 					err = nil
 				}
 			case "exists":
-				_, err = client.Exists(ctx, generateRandomKey()).Result()
+				_, err = sentinelClient.Exists(ctx, generateRandomKey()).Result()
 			case "lrange":
-				_, err = client.LRange(ctx, fmt.Sprintf("list:%d", getRandomInt(1, 50)), 0, 10).Result()
+				_, err = sentinelClient.LRange(ctx, fmt.Sprintf("list:%d", getRandomInt(1, 50)), 0, 10).Result()
 			case "smembers":
-				_, err = client.SMembers(ctx, fmt.Sprintf("set:%d", getRandomInt(1, 50))).Result()
+				_, err = sentinelClient.SMembers(ctx, fmt.Sprintf("set:%d", getRandomInt(1, 50))).Result()
 			case "hgetall":
-				_, err = client.HGetAll(ctx, fmt.Sprintf("hash:%d", getRandomInt(1, 50))).Result()
+				_, err = sentinelClient.HGetAll(ctx, fmt.Sprintf("hash:%d", getRandomInt(1, 50))).Result()
 			}
 		} else {
 			results["writes"]++
 			op := writeOps[rand.Intn(len(writeOps))]
 			switch op {
 			case "set":
-				err = primaryClient.Set(ctx, generateRandomKey(), generateRandomString(20), 300*time.Second).Err()
+				err = sentinelClient.Set(ctx, generateRandomKey(), generateRandomString(20), 300*time.Second).Err()
 			case "incr":
-				_, err = primaryClient.Incr(ctx, fmt.Sprintf("counter:%d", getRandomInt(1, 100))).Result()
+				_, err = sentinelClient.Incr(ctx, fmt.Sprintf("counter:%d", getRandomInt(1, 100))).Result()
 			case "lpush":
 				listKey := fmt.Sprintf("list:%d", getRandomInt(1, 50))
-				err = primaryClient.LPush(ctx, listKey, generateRandomString(20)).Err()
+				err = sentinelClient.LPush(ctx, listKey, generateRandomString(20)).Err()
 				if err == nil {
-					primaryClient.LTrim(ctx, listKey, 0, 99)
+					sentinelClient.LTrim(ctx, listKey, 0, 99)
 				}
 			case "sadd":
-				_, err = primaryClient.SAdd(ctx, fmt.Sprintf("set:%d", getRandomInt(1, 50)), generateRandomString(20)).Result()
+				_, err = sentinelClient.SAdd(ctx, fmt.Sprintf("set:%d", getRandomInt(1, 50)), generateRandomString(20)).Result()
 			case "hset":
-				_, err = primaryClient.HSet(ctx, fmt.Sprintf("hash:%d", getRandomInt(1, 50)), generateRandomString(10), generateRandomString(20)).Result()
+				_, err = sentinelClient.HSet(ctx, fmt.Sprintf("hash:%d", getRandomInt(1, 50)), generateRandomString(10), generateRandomString(20)).Result()
 			}
 		}
 

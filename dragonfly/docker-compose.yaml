@@ -60,6 +60,51 @@ services:
       timeout: 3s
       retries: 5
 
+  # Redis Sentinel 1
+  dragonfly-sentinel-1:
+    image: redis:7-alpine
+    container_name: dragonfly-sentinel-1
+    entrypoint: ["/sentinel-entrypoint.sh"]
+    ports:
+      - "26379:26379"
+    networks:
+      - dragonfly-network
+    volumes:
+      - ./sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+
+  # Redis Sentinel 2
+  dragonfly-sentinel-2:
+    image: redis:7-alpine
+    container_name: dragonfly-sentinel-2
+    entrypoint: ["/sentinel-entrypoint.sh"]
+    ports:
+      - "26380:26379"
+    networks:
+      - dragonfly-network
+    volumes:
+      - ./sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+
+  # Redis Sentinel 3
+  dragonfly-sentinel-3:
+    image: redis:7-alpine
+    container_name: dragonfly-sentinel-3
+    entrypoint: ["/sentinel-entrypoint.sh"]
+    ports:
+      - "26381:26379"
+    networks:
+      - dragonfly-network
+    volumes:
+      - ./sentinel-entrypoint.sh:/sentinel-entrypoint.sh:ro
+    depends_on:
+      dragonfly-primary:
+        condition: service_healthy
+
   # Load Generator
   load-generator:
     build:
@@ -84,26 +129,21 @@ services:
     restart: unless-stopped
 
   # Go Application
-  express-app:
+  go-app:
     build:
       context: ./app
       dockerfile: Dockerfile
     container_name: dragonfly-go-app
     environment:
       - PORT=3000
-      - DRAGONFLY_PRIMARY=dragonfly-primary:6379
-      - DRAGONFLY_REPLICA_1=dragonfly-replica-1:6380
-      - DRAGONFLY_REPLICA_2=dragonfly-replica-2:6381
+      - SENTINEL_ADDRESSES=dragonfly-sentinel-1:26379,dragonfly-sentinel-2:26379,dragonfly-sentinel-3:26379
+      - SENTINEL_MASTER_NAME=dragonfly-master
     ports:
       - "3002:3000"
     networks:
       - dragonfly-network
     depends_on:
       dragonfly-primary:
-        condition: service_healthy
-      dragonfly-replica-1:
-        condition: service_healthy
-      dragonfly-replica-2:
         condition: service_healthy
     restart: unless-stopped
 

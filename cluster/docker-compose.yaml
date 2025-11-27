@@ -167,7 +167,7 @@ services:
     restart: unless-stopped
 
   # Go Application
-  express-app:
+  go-app:
     build:
       context: ./app
       dockerfile: Dockerfile

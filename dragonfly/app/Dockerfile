@@ -24,9 +24,6 @@ WORKDIR /root/
 # Copy the binary from builder
 COPY --from=builder /app/server .
 
-# Copy public directory
-COPY public ./public
-
 # Expose port
 EXPOSE 3000
 
