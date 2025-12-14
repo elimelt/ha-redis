@@ -1,0 +1,24 @@
+{
+  "name": "redis-sentinel-sync-replication-tests",
+  "version": "1.0.0",
+  "description": "Test scripts for Redis Sentinel with synchronous replication",
+  "main": "index.js",
+  "scripts": {
+    "test:basic": "node basic-test.js",
+    "test:sync-replication": "node test-sync-replication.js",
+    "test:failover": "node test-failover.js",
+    "test:replica-lag": "node test-replica-lag.js",
+    "test:continuous-failover": "node test-continuous-failover.js"
+  },
+  "keywords": [
+    "redis",
+    "sentinel",
+    "synchronous-replication"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "redis": "^5.8.3"
+  }
+}
+
