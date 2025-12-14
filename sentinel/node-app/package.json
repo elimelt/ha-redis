@@ -1,0 +1,16 @@
+{
+  "name": "redis-sentinel-pubsub",
+  "version": "1.0.0",
+  "description": "Redis Sentinel pub/sub test client",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "publisher": "node publisher.js",
+    "subscriber": "node subscriber.js",
+    "basic": "node basic-test.js"
+  },
+  "dependencies": {
+    "redis": "^5.8.3"
+  }
+}
+

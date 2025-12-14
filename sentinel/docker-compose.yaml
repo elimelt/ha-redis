@@ -154,11 +154,11 @@ services:
       dockerfile: Dockerfile
     container_name: redis-go-app
     environment:
-      - PORT=3000
+      - PORT=8080
       - REDIS_SENTINELS=redis-sentinel-1:26379,redis-sentinel-2:26379,redis-sentinel-3:26379
       - REDIS_MASTER_NAME=mymaster
     ports:
-      - "3000:3000"
+      - "8080:8080"
     networks:
       - redis-network
     depends_on:
