@@ -8,7 +8,10 @@
     "test:sync-replication": "node test-sync-replication.js",
     "test:failover": "node test-failover.js",
     "test:replica-lag": "node test-replica-lag.js",
-    "test:continuous-failover": "node test-continuous-failover.js"
+    "test:continuous-failover": "node test-continuous-failover.js",
+    "benchmark": "node benchmark.js",
+    "benchmark:failure": "node benchmark-failure.js",
+    "benchmark:config-sweep": "node benchmark-config-sweep.js"
   },
   "keywords": [
     "redis",
